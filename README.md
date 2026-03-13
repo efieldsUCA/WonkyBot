@@ -99,7 +99,7 @@ WonkyBot/                          ← This repository (cloned into ~/seniordesi
 └── README.md
 ```
 
-> **Note:** `start_nav.sh` lives at `~/start_nav.sh` on the robot's Raspberry Pi (not in this repo). Copy it there after cloning.
+> **Note:** `start_nav.sh` and `start_mapping.sh` are included in this repo. After cloning, copy them to your home directory so they can be run from anywhere.
 
 ---
 
