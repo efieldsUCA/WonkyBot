@@ -72,7 +72,8 @@ Install ROS 2 dependencies:
 sudo apt install ros-jazzy-nav2-bringup ros-jazzy-nav2-simple-commander \
     ros-jazzy-realsense2-camera ros-jazzy-depthimage-to-laserscan \
     ros-jazzy-tf2-ros ros-jazzy-tf-transformations \
-    ros-jazzy-rmw-cyclonedds-cpp
+    ros-jazzy-rmw-cyclonedds-cpp \
+    ros-jazzy-rplidar-ros \
 pip3 install pyserial opencv-python numpy
 ```
 
