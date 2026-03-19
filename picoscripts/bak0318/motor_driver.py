@@ -41,8 +41,8 @@ if __name__ == "__main__":
     from time import sleep
 
     # SETUP
-    md = MotorDriver(3, 2, 4)
-    #md = MotorDriver(6, 7, 8)
+    #md = MotorDriver(3, 2, 4)
+    md = MotorDriver(6, 7, 8)
 
     # LOOP
     for i in range(100):
