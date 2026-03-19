@@ -40,37 +40,7 @@ def generate_launch_description():
         ],
     )
 
-    lidar_static_tf_node = Node(
-        package="tf2_ros",
-        executable="static_transform_publisher",
-        arguments=[
-            "--x",
-            "0.15",
-            "--y",
-            "0",
-            "--z",
-            "0.2",
-            "--yaw",
-            str(pi),
-            "--pitch",
-            "0",
-            "--roll",
-            "0",
-            "--frame-id",
-            "base_link",
-            "--child-frame-id",
-            "lidar_link",
-        ],
-    )
-
-    # diff_drive_node = Node(package="solid_octo", executable="diff_drive_controller")
     octo_pilot_node = Node(package="solid_octo", executable="octo_pilot")
-
-    rplidar_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            str(control_package_path / "launch/rplidar.launch.py")
-        ),
-    )
 
     launch_teleop_twist_joy = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -82,11 +52,8 @@ def generate_launch_description():
     return LaunchDescription(
         [
             sim_time_arg,
-            # diff_drive_node,
             octo_pilot_node,
-            rplidar_launch,
             launch_teleop_twist_joy,
             footprint_static_tf_node,
-            lidar_static_tf_node,
         ]
     )
