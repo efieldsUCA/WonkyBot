@@ -68,6 +68,19 @@ def generate_launch_description():
 
     octo_pilot_node = Node(package="solid_octo", executable="octo_pilot")
 
+    launch_realsense = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            str(get_package_share_path("realsense2_camera") / "launch/rs_launch.py")
+        ),
+        launch_arguments={
+            "align_depth.enable": "true",
+            "unite_imu_method": "2",
+            "enable_gyro": "true",
+            "enable_accel": "true",
+            "init_reset": "true",
+        }.items(),
+    )
+
     robot_localization_node = Node(
         package="robot_localization",
         executable="ekf_node",
@@ -94,6 +107,7 @@ def generate_launch_description():
             footprint_static_tf,
             camer_link_static_tf,
             octo_pilot_node,
+            launch_realsense,
             robot_localization_node,
             launch_teleop_twist_joy,
         ]
