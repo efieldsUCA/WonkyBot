@@ -54,7 +54,7 @@ class OctoPilot(Node):
         # Transmit velocity commands to Pico
         msg_to_pico = f"{self.targ_lin_vel:.3f},{self.targ_ang_vel:.3f}\n"
         self.pico_msngr.write(msg_to_pico.encode("utf-8"))
-        self.get_logger().info(f"target vels:\n---\n{msg_to_pico}")  # debug
+        self.get_logger().debug(f"target vels:\n---\n{msg_to_pico}")  # debug
         # Receive motion data from Pico
         if self.pico_msngr.inWaiting() > 0:
             msg_from_pico = self.pico_msngr.readline().decode("utf-8", "ignore").strip()
