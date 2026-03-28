@@ -92,6 +92,25 @@ def generate_launch_description():
         ],
     )
 
+    depthimage_to_laserscan_node = Node(
+        package="depthimage_to_laserscan",
+        executable="depthimage_to_laserscan_node",
+        name="depthimage_to_laserscan_node",
+        # output="screen",
+        remappings=[
+            ("/depth_camera_info", "/camera/camera/aligned_depth_to_color/camera_info"),
+            ("/depth", "/camera/camera/aligned_depth_to_color/image_raw"),
+        ],
+        parameters=[
+            {
+                "output_frame": "camera_depth_frame",  # <--- The critical fix
+                "scan_height": 5,  # Number of pixel rows to average
+                "range_min": 0.5,  # Min distance (RealSense depends on model, usually 0.2m)
+                "range_max": 12.0,  # Max distance
+            }
+        ],
+    )
+
     launch_teleop_twist_joy = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             str(get_package_share_path("teleop_twist_joy") / "launch/teleop-launch.py")
@@ -109,6 +128,7 @@ def generate_launch_description():
             octo_pilot_node,
             launch_realsense,
             robot_localization_node,
+            depthimage_to_laserscan_node,
             launch_teleop_twist_joy,
         ]
     )
