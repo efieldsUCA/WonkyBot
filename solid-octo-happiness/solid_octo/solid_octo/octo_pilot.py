@@ -1,125 +1,111 @@
 import rclpy
 from rclpy.node import Node
 
-from tf2_ros import TransformBroadcaster
 from tf_transformations import quaternion_about_axis
 
 from geometry_msgs.msg import Twist, TransformStamped
 from nav_msgs.msg import Odometry
-from sensor_msgs.msg import Joy
 
 import serial
-from math import sin, cos, pi
+from math import sin, cos, atan2
 
 
 class OctoPilot(Node):
     def __init__(self):
         super().__init__("octo_pilot")
         # Create serial communication to Pico
-        self.pico_msngr = serial.Serial("/dev/ttyACM0", 115200)
-        self.listen_pico_msg_timer = self.create_timer(0.015, self.listen_pico_msg)
+        self.pico_msngr = serial.Serial("/dev/ttyACM0", 115200, timeout=0.01)
+        self.pico_comm_timer = self.create_timer(0.0133, self.process_pico_message)
         # Create target velocity subscriber
         self.targ_vel_subr = self.create_subscription(
-            topic="cmd_vel",
+            topic="/cmd_vel",
             msg_type=Twist,
-            callback=self.set_vel,
-            qos_profile=1,
-        )
-        self.joy_subr = self.create_subscription(
-            topic="joy",
-            msg_type=Joy,
-            callback=self.get_z,
+            callback=self.set_targ_vels,
             qos_profile=1,
         )
         # Create odometry publisher
         self.odom_pubr = self.create_publisher(
-            topic="odom",
+            topic="/odom",
             msg_type=Odometry,
             qos_profile=1,
         )
-        self.publish_odom_timer = self.create_timer(0.02, self.publish_odom)
-        # Create tf broadcaster
-        self.odom_base_broadcaster = TransformBroadcaster(self)
         # variables
-        self.lin_vel = 0.0  # in base_link frame
-        self.ang_vel = 0.0  # and they are real vels
-        self.x = 0.0  # in odom frame
-        self.y = 0.0
-        self.th = 0.0
-        self.z_dir = 0
+        self.motion_data = {key: 0.0 for key in ["meas_lin_vel", "meas_ang_vel"]}
+        self.targ_lin_vel = 0.0
+        self.targ_ang_vel = 0.0
+        self.pose = {key: 0.0 for key in ["x", "y", "theta"]}
         self.prev_ts = self.get_clock().now()
         self.curr_ts = self.get_clock().now()
-        # constants
-        self.GROUND_CLEARANCE = 0.05
-        self.get_logger().info("Octo driver is up.")
+        self.set_vel_ts = self.get_clock().now()
+        # Constants
+        self.GROUND_CLEARANCE = 0.0375
+        # Log
+        self.get_logger().info("---\nOcto driver is up.\n---")
 
-    def listen_pico_msg(self):
+    def set_targ_vels(self, msg):
+        self.set_vel_ts = self.get_clock().now()
+        self.targ_lin_vel = msg.linear.x
+        self.targ_ang_vel = msg.angular.z
+        self.get_logger().debug(
+            f"Set target velocity\nlinear: {self.targ_lin_vel}, angular: {self.targ_ang_vel}"
+        )
+
+    def process_pico_message(self):
+        # Transmit velocity commands to Pico
+        msg_to_pico = f"{self.targ_lin_vel:.3f},{self.targ_ang_vel:.3f}\n"
+        self.pico_msngr.write(msg_to_pico.encode("utf-8"))
+        self.get_logger().info(f"target vels:\n---\n{msg_to_pico}")  # debug
+        # Receive motion data from Pico
         if self.pico_msngr.inWaiting() > 0:
-            vels = (
-                self.pico_msngr.readline().decode("utf-8").rstrip().split(",")
-            )  # actual linear and angular vel
-            if len(vels) == 2:
-                self.lin_vel = float(vels[0])
-                self.ang_vel = float(vels[1])
-        self.get_logger().debug(
-            f"Octo's real velocity\nlinear: {self.lin_vel}, angular: {self.ang_vel}"
-        )
-
-    def get_z(self, msg):
-        self.z_dir = int(msg.axes[-1])
-        self.get_logger().debug(f"z axis direction: {self.z_dir}")
-
-    def set_vel(self, msg):
-        targ_lin = msg.linear.x
-        targ_ang = msg.angular.z
-        self.pico_msngr.write(f"{targ_lin},{targ_ang},{self.z_dir}\n".encode("utf-8"))
-        self.get_logger().debug(
-            f"Set Octo's target velocity\nlinear: {targ_lin}, angular: {targ_ang}"
-        )
-
-    def publish_odom(self):
+            msg_from_pico = self.pico_msngr.readline().decode("utf-8", "ignore").strip()
+            if msg_from_pico:
+                data_strings = msg_from_pico.split(",")
+                if len(data_strings) == 2:
+                    try:
+                        self.motion_data.update(
+                            zip(
+                                self.motion_data.keys(),
+                                map(
+                                    float, data_strings
+                                ),  # convert all str in list to float
+                            )
+                        )
+                    except ValueError:
+                        pass
+        self.get_logger().debug(f"Motion data:\n---\n{self.motion_data}")  # debug
         self.curr_ts = self.get_clock().now()
+        # Update pose
         dt = (self.curr_ts - self.prev_ts).nanoseconds * 1e-9
-        dx = self.lin_vel * cos(self.th) * dt
-        dy = self.lin_vel * sin(self.th) * dt
-        dth = self.ang_vel * dt
-        self.x += dx
-        self.y += dy
-        self.th += dth
-        if self.th > pi:
-            self.th -= 2 * pi
-        elif self.th < -pi:
-            self.th += 2 * pi
-        quat = quaternion_about_axis(self.th, (0, 0, 1))
-        self.prev_ts = self.curr_ts
-        # publish odom to base_link transform
-        odom_base_trans = TransformStamped()
-        odom_base_trans.header.stamp = self.curr_ts.to_msg()
-        odom_base_trans.header.frame_id = "odom"
-        odom_base_trans.child_frame_id = "base_link"
-        odom_base_trans.transform.translation.x = self.x
-        odom_base_trans.transform.translation.y = self.y
-        odom_base_trans.transform.translation.z = self.GROUND_CLEARANCE
-        odom_base_trans.transform.rotation.x = quat[0]
-        odom_base_trans.transform.rotation.y = quat[1]
-        odom_base_trans.transform.rotation.z = quat[2]
-        odom_base_trans.transform.rotation.w = quat[3]
-        self.odom_base_broadcaster.sendTransform(odom_base_trans)
-        # publish odom
+        dx = self.motion_data["meas_lin_vel"] * cos(self.pose["theta"]) * dt
+        dy = self.motion_data["meas_lin_vel"] * sin(self.pose["theta"]) * dt
+        dth = self.motion_data["meas_ang_vel"] * dt
+        self.pose["x"] += dx
+        self.pose["y"] += dy
+        self.pose["theta"] += dth
+        self.pose["theta"] = atan2(
+            sin(self.pose["theta"]), cos(self.pose["theta"])
+        )  # restrict value: [-pi, pi]
+        quat = quaternion_about_axis(self.pose["theta"], (0, 0, 1))
+        self.prev_ts = self.curr_ts  # update time stamp
+        # Publish odom topic
         odom_msg = Odometry()
         odom_msg.header.stamp = self.curr_ts.to_msg()
         odom_msg.header.frame_id = "odom"
         odom_msg.child_frame_id = "base_link"
-        odom_msg.pose.pose.position.x = self.x
-        odom_msg.pose.pose.position.y = self.y
+        odom_msg.pose.pose.position.x = self.pose["x"]
+        odom_msg.pose.pose.position.y = self.pose["y"]
         odom_msg.pose.pose.position.z = self.GROUND_CLEARANCE
         odom_msg.pose.pose.orientation.x = quat[0]
         odom_msg.pose.pose.orientation.y = quat[1]
         odom_msg.pose.pose.orientation.z = quat[2]
         odom_msg.pose.pose.orientation.w = quat[3]
-        odom_msg.twist.twist.linear.x = self.lin_vel
-        odom_msg.twist.twist.angular.z = self.ang_vel
+        odom_msg.twist.twist.linear.x = self.motion_data["meas_lin_vel"]
+        odom_msg.twist.twist.angular.z = self.motion_data["meas_ang_vel"]
         self.odom_pubr.publish(odom_msg)
+        # Clear target velocity after 0.5 s idling
+        if (self.curr_ts - self.set_vel_ts).nanoseconds > 500_000_000:
+            self.targ_lin_vel = 0.0
+            self.targ_ang_vel = 0.0
 
 
 def main(args=None):
