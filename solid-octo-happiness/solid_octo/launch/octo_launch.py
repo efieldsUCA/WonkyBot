@@ -103,7 +103,7 @@ def generate_launch_description():
         ],
         parameters=[
             {
-                "output_frame": "camera_depth_frame",  # <--- The critical fix
+                "output_frame": "base_link",  # <--- The critical fix
                 "scan_height": 5,  # Number of pixel rows to average
                 "range_min": 0.5,  # Min distance (RealSense depends on model, usually 0.2m)
                 "range_max": 12.0,  # Max distance
