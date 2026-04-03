@@ -45,7 +45,7 @@ The robot uses a RealSense D455 depth camera as both its obstacle sensor (via de
 | Intel RealSense D455 | RGB-D camera for obstacle avoidance and ball detection |
 | Differential Drive Chassis | 4-wheel chassis with rear-wheel drive |
 | Drive Motors | DC gear motors with quadrature encoders (70:1 ratio) |
-| Arm/Gripper | Servo-actuated grabber controlled by Pico |
+| Arm/Gripper | Stepper-Motor-actuated grabber controlled by Pico |
 
 **Key physical measurements (update after measuring your robot):**
 
@@ -72,7 +72,7 @@ Install ROS 2 dependencies:
 sudo apt install ros-jazzy-nav2-bringup ros-jazzy-nav2-simple-commander \
     ros-jazzy-realsense2-camera ros-jazzy-depthimage-to-laserscan \
     ros-jazzy-tf2-ros ros-jazzy-tf-transformations \
-    ros-jazzy-rmw-cyclonedds-cpp
+    ros-jazzy-rmw-cyclonedds-cpp \
 pip3 install pyserial opencv-python numpy
 ```
 
