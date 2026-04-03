@@ -20,7 +20,7 @@ from std_msgs.msg    import String, Bool
 from geometry_msgs.msg import Twist
 
 # ── Tunable constants ──────────────────────────────────────────
-IMAGE_WIDTH    = 320
+IMAGE_WIDTH    = 480
 IMAGE_CENTRE_X = IMAGE_WIDTH // 2
 
 TARGET_PRIORITY = ["RED", "YELLOW", "GREEN", "BLUE"]
@@ -28,7 +28,7 @@ TARGET_TYPE     = "BALL"
 
 GRAB_DISTANCE_M  = 0.25   # stop and grab when depth reads this close
 LINEAR_SPEED     = 0.12   # m/s forward creep
-KP_ANGULAR       = 0.006  # pixels error → rad/s (tuned for 320px wide frame)
+KP_ANGULAR       = 0.004  # pixels error → rad/s (tuned for 480px wide frame)
 CENTRE_DEADBAND  = 15     # pixels
 
 
@@ -52,6 +52,7 @@ class SortingMaster(Node):
         self.vision_active    = False
         self.grabbed          = False
         self.last_valid_depth = 999.0   # tracks last non-zero depth reading
+        self.close_count      = 0       # consecutive frames where ball is close enough
 
         self.create_timer(0.1, self.control_loop)
 
@@ -66,8 +67,10 @@ class SortingMaster(Node):
 
     def activate_cb(self, msg: Bool):
         if msg.data:
-            self.vision_active = True
-            self.grabbed       = False
+            self.vision_active    = True
+            self.grabbed          = False
+            self.close_count      = 0
+            self.last_valid_depth = 999.0
             self.get_logger().info("Vision handoff ACTIVATED — approaching ball")
 
     def release_cb(self, msg: Bool):
@@ -94,11 +97,17 @@ class SortingMaster(Node):
         if depth_m > 0.0:
             self.last_valid_depth = depth_m
 
-        # Grab when close enough, OR when depth goes to 0 (ball too close for
-        # D455 minimum range ~0.3m) and we were recently within 0.5m
+        # Grab when close enough: need real depth reading OR ball too close
+        # for D455 minimum range (~0.3m) after being recently within 0.4m.
+        # Require 5 consecutive close frames to avoid false triggers.
         close_enough = (depth_m > 0.0 and depth_m <= GRAB_DISTANCE_M) or \
-                       (depth_m == 0.0 and self.last_valid_depth <= 0.5)
+                       (depth_m == 0.0 and self.last_valid_depth <= 0.4)
         if close_enough:
+            self.close_count += 1
+        else:
+            self.close_count = 0
+
+        if self.close_count >= 5:
             self._send_velocity(0.0, 0.0)
             self._send_arm("GRAB")
             self.grabbed       = True

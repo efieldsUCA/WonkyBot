@@ -72,7 +72,7 @@ class OctoPilot(Node):
     def set_vel(self, msg):
         targ_lin = msg.linear.x
         targ_ang = msg.angular.z
-        self.pico_msngr.write(f"{targ_lin},{targ_ang},{self.z_dir}\n".encode("utf-8"))
+        self.pico_msngr.write(f"{targ_lin},{targ_ang}\n".encode("utf-8"))
         self.get_logger().debug(
             f"Set Octo's target velocity\nlinear: {targ_lin}, angular: {targ_ang}"
         )

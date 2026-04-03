@@ -24,8 +24,11 @@ from std_msgs.msg import String
 COLORS_JSON = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "colors.json"
 )
-MIN_AREA  = 600         # minimum contour area in pixels (320x240 frame)
+FRAME_W   = 480
+FRAME_H   = 360
+MIN_AREA  = 800         # minimum contour area in pixels
 MAX_DEPTH = 2.0         # ignore detections farther than this (meters)
+PROCESS_EVERY = 2       # process every Nth frame (skip others to keep Pi responsive)
 KERNEL   = np.ones((5, 5), np.uint8)
 
 
@@ -73,10 +76,12 @@ def classify_contour(cnt, gray):
     if area < MIN_AREA or perimeter == 0:
         return None, None, None
     circularity = (4 * np.pi * area) / (perimeter ** 2)
-    bbox     = cv2.boundingRect(cnt)
-    # Balls are highly circular (>0.65); buckets are boxy (<0.65)
-    obj_type = "BALL" if circularity > 0.65 else "BUCKET"
-    return obj_type, bbox, circularity
+    x, y, w, h = cv2.boundingRect(cnt)
+    aspect_ratio = float(w) / h if h > 0 else 0
+    # Balls: circular (>0.55) AND roughly square aspect ratio (0.7-1.3)
+    is_ball = circularity > 0.55 and 0.7 < aspect_ratio < 1.3
+    obj_type = "BALL" if is_ball else "BUCKET"
+    return obj_type, (x, y, w, h), circularity
 
 
 class DetectorNode(Node):
@@ -100,6 +105,8 @@ class DetectorNode(Node):
             Image, "/camera/camera/aligned_depth_to_color/image_raw",
             self.depth_cb, qos_profile_sensor_data)
 
+        self.frame_count = 0
+
         self.get_logger().info(
             f"detector_node ready — colors: {list(self.colors.keys())}"
         )
@@ -113,13 +120,15 @@ class DetectorNode(Node):
 
     # ── Color callback — main detection ───────────────────────
     def color_cb(self, msg: Image):
-        self.get_logger().info("color_cb fired", throttle_duration_sec=2.0)
+        self.frame_count += 1
+        if self.frame_count % PROCESS_EVERY != 0:
+            return
+
         try:
             raw = self.bridge.imgmsg_to_cv2(msg, "bgr8")
 
-            # Downscale to 320x240 for speed
-            frame       = cv2.resize(raw, (320, 240))
-            depth_small = cv2.resize(self.depth_frame, (320, 240), interpolation=cv2.INTER_NEAREST) if self.depth_frame is not None else None
+            frame       = cv2.resize(raw, (FRAME_W, FRAME_H))
+            depth_small = cv2.resize(self.depth_frame, (FRAME_W, FRAME_H), interpolation=cv2.INTER_NEAREST) if self.depth_frame is not None else None
 
             hsv  = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -165,15 +174,14 @@ class DetectorNode(Node):
 
                     cv2.rectangle(frame, (x, y), (x+w, y+h), color_data["bgr"], 2)
                     cv2.putText(frame, f"{color_name} {obj_type} {depth_m:.2f}m",
-                                (x, y-8), cv2.FONT_HERSHEY_SIMPLEX, 0.35,
-                                color_data["bgr"], 1)
+                                (x, y-8), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                                color_data["bgr"], 2)
 
             msg_out      = String()
             msg_out.data = json.dumps(detections)
             self.pub_objects.publish(msg_out)
 
-            if self.pub_debug.get_subscription_count() > 0:
-                self.pub_debug.publish(self.bridge.cv2_to_imgmsg(frame, "bgr8"))
+            self.pub_debug.publish(self.bridge.cv2_to_imgmsg(frame, "bgr8"))
 
             if detections:
                 summary = [(d["color"], d["type"], str(d["depth_m"]) + "m", "c=" + str(d["circularity"])) for d in detections]

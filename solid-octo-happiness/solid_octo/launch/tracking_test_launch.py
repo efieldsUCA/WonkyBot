@@ -28,16 +28,25 @@ def generate_launch_description():
         arguments=['0.1', '0', '0.2', '0', '0', '0', 'base_link', 'camera_link']
     )
 
-    # 3. Your Sorting Master Node (The "Brain")
+    # 3. Detector Node (The "Eyes Processor")
+    # Runs HSV color detection and publishes detections to /detected_objects
+    detector_node = Node(
+        package='solid_octo',
+        executable='detector_node',
+        output='screen'
+    )
+
+    # 4. Your Sorting Master Node (The "Brain")
     # This runs your custom OpenCV tracking code without the heavy SLAM overhead.
     sorting_master_node = Node(
-        package='solid_octo', # Make sure this matches your actual package name!
-        executable='sorting_master', 
+        package='solid_octo',
+        executable='sorting_master',
         output='screen'
     )
 
     return LaunchDescription([
         realsense_launch,
         base_to_camera_tf,
+        detector_node,
         sorting_master_node
     ])
