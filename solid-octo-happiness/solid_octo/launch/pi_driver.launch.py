@@ -2,21 +2,20 @@
 pi_driver.launch.py
 Runs on the Raspberry Pi ONLY. Starts all hardware drivers:
   - Motor controller (octo_pilot)
-  - RPLidar
   - RealSense camera (with aligned depth)
+  - Depth-to-laserscan (converts depth image to /scan)
   - Joystick teleop
-  - TF publishers (base_footprint, lidar_link, camera_link)
+  - TF publishers (base_footprint, camera_link)
 
 Everything else (Nav2, mapping, detection, sorting) runs on the laptop.
 
-Usage:
+Usage (on Pi, or via SSH from laptop):
   ros2 launch solid_octo pi_driver.launch.py
 """
 
 import os
-from math import pi
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription
+from launch.actions import IncludeLaunchDescription, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory, get_package_share_path
@@ -33,13 +32,6 @@ def generate_launch_description():
         output="screen",
     )
 
-    # RPLidar
-    rplidar_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            str(control_package_path / "launch/rplidar.launch.py")
-        ),
-    )
-
     # RealSense camera with aligned depth
     realsense_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
@@ -49,6 +41,25 @@ def generate_launch_description():
         launch_arguments={
             "align_depth.enable": "true",
         }.items(),
+    )
+
+    # Depth image -> 2D laser scan (used by RTABMAP and Nav2 for /scan)
+    depth_to_laser = Node(
+        package="depthimage_to_laserscan",
+        executable="depthimage_to_laserscan_node",
+        name="depthimage_to_laserscan",
+        output="screen",
+        remappings=[
+            ("depth", "/camera/camera/depth/image_rect_raw"),
+            ("depth_camera_info", "/camera/camera/depth/camera_info"),
+            ("scan", "/scan"),
+        ],
+        parameters=[{
+            "output_frame": "camera_link",
+            "range_min": 0.35,
+            "range_max": 4.0,
+            "scan_height": 10,
+        }],
     )
 
     # Joystick teleop
@@ -72,19 +83,6 @@ def generate_launch_description():
         ],
     )
 
-    # TF: base_link -> lidar_link
-    lidar_tf = Node(
-        package="tf2_ros",
-        executable="static_transform_publisher",
-        name="lidar_tf",
-        arguments=[
-            "--x", "0.15", "--y", "0", "--z", "0.2",
-            "--yaw", str(pi), "--pitch", "0", "--roll", "0",
-            "--frame-id", "base_link",
-            "--child-frame-id", "lidar_link",
-        ],
-    )
-
     # TF: base_link -> camera_link
     camera_tf = Node(
         package="tf2_ros",
@@ -100,10 +98,10 @@ def generate_launch_description():
 
     return LaunchDescription([
         octo_pilot_node,
-        rplidar_launch,
         realsense_launch,
+        # Delay laserscan until camera is up
+        TimerAction(period=3.0, actions=[depth_to_laser]),
         teleop_launch,
         footprint_tf,
-        lidar_tf,
         camera_tf,
     ])

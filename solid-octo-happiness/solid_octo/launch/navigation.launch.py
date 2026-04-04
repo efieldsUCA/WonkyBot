@@ -1,20 +1,16 @@
 """
 navigation.launch.py
 Runs on the LAPTOP over the same ROS2 network as the Pi.
-Starts Nav2, depth-to-laserscan, detector, sorting_master, detection_3d,
+Starts Nav2, detector, sorting_master, detection_3d,
 and waypoint_navigator for autonomous ball sorting.
 
 Prerequisites:
   - Pi is running: ros2 launch solid_octo pi_driver.launch.py
   - A saved map exists (from mapping.launch.py)
-  - Same ROS_DOMAIN_ID and RMW_IMPLEMENTATION on both machines
+  - Same ROS_DOMAIN_ID on both machines
 
 Usage:
   ros2 launch solid_octo navigation.launch.py map:=/path/to/room_map.yaml
-
-Arguments:
-  map         - path to the map YAML file (required)
-  params_file - path to nav2_params.yaml (optional, has default)
 """
 
 import os
@@ -41,25 +37,6 @@ def generate_launch_description():
         "params_file",
         default_value=default_params,
         description="Full path to nav2_params.yaml",
-    )
-
-    # Depth image -> fake 2D laser scan
-    depth_to_laser = Node(
-        package="depthimage_to_laserscan",
-        executable="depthimage_to_laserscan_node",
-        name="depthimage_to_laserscan",
-        output="screen",
-        remappings=[
-            ("depth", "/camera/camera/depth/image_rect_raw"),
-            ("depth_camera_info", "/camera/camera/depth/camera_info"),
-            ("scan", "/scan"),
-        ],
-        parameters=[{
-            "output_frame": "camera_link",
-            "range_min": 0.35,
-            "range_max": 4.0,
-            "scan_height": 10,
-        }],
     )
 
     # Nav2 bringup (map server, AMCL, planner, controller, etc.)
@@ -107,7 +84,6 @@ def generate_launch_description():
     return LaunchDescription([
         map_arg,
         params_arg,
-        depth_to_laser,
         nav2_launch,
         # Delay detection and navigation nodes to let Nav2 start up
         TimerAction(period=5.0, actions=[detector_node]),
