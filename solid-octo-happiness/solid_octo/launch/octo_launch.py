@@ -1,14 +1,17 @@
+from math import pi
+
 from ament_index_python.packages import get_package_share_path
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch_ros.actions import Node
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from math import pi
+from launch.substitutions import LaunchConfiguration
 
 
 def generate_launch_description():
-    control_package_path = get_package_share_path("solid_octo")
-    joy_config_path = control_package_path / "configs/xbox.config.yaml"
+    octo_package_path = get_package_share_path("solid_octo")
+    joy_config_path = octo_package_path / "config/joy.yaml"
+    ekf_config_path = octo_package_path / "config/ekf.yaml"
 
     sim_time_arg = DeclareLaunchArgument(
         name="use_sim_time",
@@ -17,7 +20,7 @@ def generate_launch_description():
         description="Flag to enable use simulation time",
     )
 
-    footprint_static_tf_node = Node(
+    footprint_static_tf = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
         arguments=[
@@ -26,7 +29,7 @@ def generate_launch_description():
             "--y",
             "0",
             "--z",
-            "-0.05",
+            "-0.0375",
             "--yaw",
             "0",
             "--pitch",
@@ -40,53 +43,91 @@ def generate_launch_description():
         ],
     )
 
-    lidar_static_tf_node = Node(
+    camer_link_static_tf = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
         arguments=[
             "--x",
-            "0.15",
+            "0.2",
             "--y",
             "0",
             "--z",
-            "0.2",
+            "0",
             "--yaw",
-            str(pi),
+            f"{-pi / 2}",
             "--pitch",
             "0",
             "--roll",
-            "0",
+            f"{-pi / 2}",
             "--frame-id",
             "base_link",
             "--child-frame-id",
-            "lidar_link",
+            "camera_link",
         ],
     )
 
-    # diff_drive_node = Node(package="solid_octo", executable="diff_drive_controller")
     octo_pilot_node = Node(package="solid_octo", executable="octo_pilot")
 
-    rplidar_launch = IncludeLaunchDescription(
+    launch_realsense = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            str(control_package_path / "launch/rplidar.launch.py")
+            str(get_package_share_path("realsense2_camera") / "launch/rs_launch.py")
         ),
+        launch_arguments={
+            "align_depth.enable": "true",
+            "unite_imu_method": "2",
+            "enable_gyro": "true",
+            "enable_accel": "true",
+            "init_reset": "true",
+        }.items(),
+    )
+
+    robot_localization_node = Node(
+        package="robot_localization",
+        executable="ekf_node",
+        name="ekf_filter_node",
+        output="screen",
+        parameters=[
+            str(ekf_config_path),
+            {"use_sim_time": LaunchConfiguration("use_sim_time")},
+        ],
+    )
+
+    depthimage_to_laserscan_node = Node(
+        package="depthimage_to_laserscan",
+        executable="depthimage_to_laserscan_node",
+        name="depthimage_to_laserscan_node",
+        remappings=[
+            ("/depth_camera_info", "/camera/camera/aligned_depth_to_color/camera_info"),
+            ("/depth", "/camera/camera/aligned_depth_to_color/image_raw"),
+        ],
+        parameters=[
+            {
+                "output_frame": "base_link",
+                "scan_height": 5,
+                "range_min": 0.5,
+                "range_max": 12.0,
+            }
+        ],
     )
 
     launch_teleop_twist_joy = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             str(get_package_share_path("teleop_twist_joy") / "launch/teleop-launch.py")
         ),
-        launch_arguments={"config_filepath": str(joy_config_path)}.items(),
+        launch_arguments={
+            "config_filepath": str(joy_config_path),
+        }.items(),
     )
 
     return LaunchDescription(
         [
             sim_time_arg,
-            # diff_drive_node,
+            footprint_static_tf,
+            camer_link_static_tf,
             octo_pilot_node,
-            rplidar_launch,
+            launch_realsense,
+            robot_localization_node,
+            depthimage_to_laserscan_node,
             launch_teleop_twist_joy,
-            footprint_static_tf_node,
-            lidar_static_tf_node,
         ]
     )
